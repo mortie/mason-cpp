@@ -1,7 +1,56 @@
+#include <charconv>
 #include <mason/mason.h>
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <span>
+
+void printB64(const unsigned char *chars, size_t n, std::ostream &os)
+{
+	const char *alphabet =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		"abcdefghijklmnopqrstuvwxyz"
+		"0123456789+/";
+
+	size_t i = 0;
+	size_t j = 0;
+	unsigned char ch3[3];
+	unsigned char ch4[4];
+
+	while (n--) {
+		ch3[i++] = *(chars++);
+		if (i == 3) {
+			ch4[0] = (ch3[0] & 0xfc) >> 2;
+			ch4[1] = ((ch3[0] & 0x03) << 4) + ((ch3[1] & 0xf0) >> 4);
+			ch4[2] = ((ch3[1] & 0x0f) << 2) + ((ch3[2] & 0xc0) >> 6);
+			ch4[3] = ch3[2] & 0x3f;
+
+			for (i = 0; (i < 4) ; i++) {
+				os << alphabet[ch4[i]];
+			}
+			i = 0;
+		}
+	}
+
+	if (i) {
+		for (j = i; j < 3; j++) {
+			ch3[j] = '\0';
+		}
+
+		ch4[0] = (ch3[0] & 0xfc) >> 2;
+		ch4[1] = ((ch3[0] & 0x03) << 4) + ((ch3[1] & 0xf0) >> 4);
+		ch4[2] = ((ch3[1] & 0x0f) << 2) + ((ch3[2] & 0xc0) >> 6);
+		ch4[3] = ch3[2] & 0x3f;
+
+		for (j = 0; (j < i + 1); j++) {
+			os << alphabet[ch4[j]];
+		}
+
+		while((i++ < 3)) {
+			os << '=';
+		}
+	}
+}
 
 void printJSON(const Mason::Value &val, std::ostream &os);
 
@@ -66,11 +115,16 @@ void printJSON(const Mason::Value &val, std::ostream &os)
 	} else if (auto *b = val.as<Mason::Bool>(); b) {
 		os << (*b ? "true" : "false");
 	} else if (auto *n = val.as<Mason::Number>(); n) {
-		os << *n;
+		char buf[64];
+		auto res = std::to_chars(buf, &buf[sizeof(buf) - 1], *n);
+		*res.ptr = '\0';
+		os << buf;
 	} else if (auto *s = val.as<Mason::String>(); s) {
 		printJSONString(*s, os);
 	} else if (auto *bs = val.as<Mason::BString>(); bs) {
-		os << "\"TODO\"";
+		os << '"';
+		printB64(bs->data(), bs->size(), os);
+		os << '"';
 	} else if (auto *arr = val.as<Mason::Array>(); arr) {
 		printJSONArray(*arr, os);
 	} else if (auto *obj = val.as<Mason::Object>(); obj) {

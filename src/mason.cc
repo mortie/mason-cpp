@@ -219,9 +219,9 @@ static bool parseHex(Reader &r, int n, uint32_t &ret, String *err)
 		if (ch >= '0' && ch <= '9') {
 			num += ch - '0';
 		} else if (ch >= 'a' && ch <= 'f') {
-			num += ch - 'a';
+			num += ch - 'a' + 10;
 		} else if (ch >= 'A' && ch <= 'F') {
-			num += ch - 'A';
+			num += ch - 'A' + 10;
 		} else {
 			error(loc, err, "Invalid hex character");
 			return false;
@@ -245,7 +245,8 @@ static bool parseIdentifier(Reader &r, String &ident, String *err)
 	auto isFirstIdent = [](char ch) {
 		return
 			(ch >= 'a' && ch <= 'z') ||
-			(ch >= 'A' && ch <= 'Z');
+			(ch >= 'A' && ch <= 'Z') ||
+			ch == '_';
 	};
 	if (!isFirstIdent(ch)) {
 		error(r.loc(), err, "Unexpected character for identifier");
@@ -255,7 +256,7 @@ static bool parseIdentifier(Reader &r, String &ident, String *err)
 	auto isIdent = [](char ch) {
 		return
 			(ch >= 'a' && ch <= 'z') ||
-			(ch >= 'A' && ch <= 'Z');
+			(ch >= 'A' && ch <= 'Z') ||
 			(ch >= '0' && ch <= '9') ||
 			ch == '_' || ch == '-';
 	};
@@ -435,6 +436,7 @@ static bool parseBinaryString(Reader &r, BString &bytes, String *err)
 					return false;
 				}
 				bytes.push_back(num);
+				continue;
 			}
 
 			if (!parseStringEscapeChar(ch, bytes)) {
@@ -463,7 +465,6 @@ static bool parseRawString(Reader &r, String &str, String *err)
 	int ch;
 	while ((ch = r.get()) == '#') {
 		hashes += 1;
-		r.get();
 	}
 	if (ch != '"') {
 		error(r.loc(), err, "Expected '\"'");
@@ -598,12 +599,10 @@ static bool parseNumber(Reader &r, Number &ret, String *err)
 		ch = r.peek();
 	}
 
-	char fractional[128];
-	fractional[0] = '\0';
-	size_t fractionalIndex = 0;
+	std::string fractional;
 	if (radix == 10 && ch == '.') {
 		r.get();
-		fractional[fractionalIndex++] = '.';
+		fractional += '.';
 
 		ch = r.peek();
 		if (!(ch >= '0' && ch <= '9')) {
@@ -619,12 +618,7 @@ static bool parseNumber(Reader &r, Number &ret, String *err)
 			}
 
 			if (ch >= '0' && ch <= '9') {
-				if (fractionalIndex >= sizeof(fractional) - 2) {
-					error(r.loc(), err, "Fraction too long");
-					return false;
-				}
-
-				fractional[fractionalIndex++] = ch;
+				fractional += ch;
 				r.get();
 				continue;
 			}
@@ -632,7 +626,6 @@ static bool parseNumber(Reader &r, Number &ret, String *err)
 			break;
 		}
 
-		fractional[fractionalIndex] = '\0';
 		ch = r.peek();
 	}
 
@@ -661,8 +654,8 @@ static bool parseNumber(Reader &r, Number &ret, String *err)
 
 	char number[256];
 	int n = snprintf(
-		number, sizeof(number), "%s%f%se%f",
-		sign, integral, fractional, exponent);
+		number, sizeof(number), "%s%.0f%se%.0f",
+		sign, integral, fractional.c_str(), exponent);
 	if (size_t(n) >= sizeof(number)) {
 		error(loc, err, "Number too long");
 		return false;

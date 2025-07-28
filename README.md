@@ -10,7 +10,7 @@ The parsing function has this interface:
 ```cpp
 bool Mason::parse(
     std::istream &, Mason::Value &,
-    std::string *err = nullptr);
+    std::string *err = nullptr, int maxDepth = 100);
 ```
 
 It returns `true` on success, `false` on error.

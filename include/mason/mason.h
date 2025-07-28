@@ -83,6 +83,8 @@ private:
 	size_t index_ = nextIndex();
 };
 
-bool parse(std::istream &is, Value &v, std::string *err = nullptr);
+bool parse(
+	std::istream &is, Value &v,
+	std::string *err = nullptr, int maxDepth = 100);
 
 }

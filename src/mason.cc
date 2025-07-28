@@ -72,7 +72,9 @@ size_t Value::nextIndex()
 	return index.fetch_add(1);
 }
 
-static bool parseValue(Reader &r, Value &v, String *err, bool topLevel = false);
+static bool parseValue(
+	Reader &r, Value &v, int depth,
+	String *err, bool topLevel = false);
 
 static void error(Location loc, String *err, const char *what)
 {
@@ -676,7 +678,7 @@ static bool parseKey(Reader &r, String &key, String *err)
 }
 
 static bool parseKeyValuePairsAfterKey(
-	Reader &r, String key, Object &obj, String *err)
+	Reader &r, String key, Object &obj, int depth, String *err)
 {
 	obj.clear();
 
@@ -692,7 +694,7 @@ static bool parseKeyValuePairsAfterKey(
 		}
 
 		auto &val = obj[std::move(key)] = Value::makeNull();
-		if (!parseValue(r, *val, err)) {
+		if (!parseValue(r, *val, depth, err)) {
 			return false;
 		}
 
@@ -726,7 +728,7 @@ static bool parseKeyValuePairsAfterKey(
 	}
 }
 
-static bool parseKeyValuePairs(Reader &r, Object &obj, String *err)
+static bool parseKeyValuePairs(Reader &r, Object &obj, int depth, String *err)
 {
 	String key;
 	if (!parseKey(r, key, err)) {
@@ -737,10 +739,10 @@ static bool parseKeyValuePairs(Reader &r, Object &obj, String *err)
 		return false;
 	}
 
-	return parseKeyValuePairsAfterKey(r, std::move(key), obj, err);
+	return parseKeyValuePairsAfterKey(r, std::move(key), obj, depth, err);
 }
 
-static bool parseObject(Reader &r, Object &obj, String *err)
+static bool parseObject(Reader &r, Object &obj, int depth, String *err)
 {
 	if (r.peek() != '{') {
 		error(r.loc(), err, "Expected '{'");
@@ -757,7 +759,7 @@ static bool parseObject(Reader &r, Object &obj, String *err)
 		return true;
 	}
 
-	if (!parseKeyValuePairs(r, obj, err)) {
+	if (!parseKeyValuePairs(r, obj, depth, err)) {
 		return false;
 	}
 
@@ -773,7 +775,7 @@ static bool parseObject(Reader &r, Object &obj, String *err)
 	return true;
 }
 
-static bool parseArray(Reader &r, Array &arr, String *err)
+static bool parseArray(Reader &r, Array &arr, int depth, String *err)
 {
 	if (r.peek() != '[') {
 		error(r.loc(), err, "Expected '['");
@@ -792,7 +794,7 @@ static bool parseArray(Reader &r, Array &arr, String *err)
 
 	while (true) {
 		arr.push_back(Value::makeNull());
-		if (!parseValue(r, *arr.back(), err)) {
+		if (!parseValue(r, *arr.back(), depth, err)) {
 			return false;
 		}
 
@@ -819,8 +821,15 @@ static bool parseArray(Reader &r, Array &arr, String *err)
 	}
 }
 
-static bool parseValue(Reader &r, Value &v, String *err, bool topLevel)
+static bool parseValue(
+	Reader &r, Value &v, int depth,
+	String *err, bool topLevel)
 {
+	if (depth <= 0) {
+		error(r.loc(), err, "Nesting limit exceeded");
+		return false;
+	}
+
 	int ch = r.peek();
 	if (ch == EOF) {
 		error(r.loc(), err, "Unexpected EOF");
@@ -828,9 +837,9 @@ static bool parseValue(Reader &r, Value &v, String *err, bool topLevel)
 	}
 
 	if (ch == '[') {
-		return parseArray(r, v.set(Array{}), err);
+		return parseArray(r, v.set(Array{}), depth - 1, err);
 	} else if (ch == '{') {
-		return parseObject(r, v.set(Object{}), err);
+		return parseObject(r, v.set(Object{}), depth - 1, err);
 	} else if (ch == '"') {
 		return parseString(r, v.set(String{}), err);
 	} else if (ch == 'r' && (r.peek2() == '"' || r.peek2() == '#')) {
@@ -854,7 +863,8 @@ static bool parseValue(Reader &r, Value &v, String *err, bool topLevel)
 
 		if (r.peek() == ':') {
 			return parseKeyValuePairsAfterKey(
-				r, std::move(ident), v.set(Object{}), err);
+				r, std::move(ident), v.set(Object{}),
+				depth - 1, err);
 		}
 	}
 
@@ -876,7 +886,9 @@ static bool parseValue(Reader &r, Value &v, String *err, bool topLevel)
 	}
 }
 
-bool parse(std::istream &is, Value &v, String *err)
+bool parse(
+	std::istream &is, Value &v,
+	String *err, int maxDepth)
 {
 	Reader r(is);
 
@@ -884,7 +896,7 @@ bool parse(std::istream &is, Value &v, String *err)
 		return false;
 	}
 
-	if (!parseValue(r, v, err, true)) {
+	if (!parseValue(r, v, maxDepth, err, true)) {
 		return false;
 	}
 

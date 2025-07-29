@@ -839,7 +839,25 @@ static bool parseValue(
 	} else if (ch == '{') {
 		return parseObject(r, v.set(Object{}), depth - 1, err);
 	} else if (ch == '"') {
-		return parseString(r, v.set(String{}), err);
+		String ident;
+		if (!parseString(r, ident, err)) {
+			return false;
+		}
+
+		if (topLevel) {
+			if (!skipWhitespace(r, err)) {
+				return false;
+			}
+
+			if (r.peek() == ':') {
+				return parseKeyValuePairsAfterKey(
+					r, std::move(ident), v.set(Object{}),
+					depth - 1, err);
+			}
+		}
+
+		v.set(std::move(ident));
+		return true;
 	} else if (ch == 'r' && (r.peek2() == '"' || r.peek2() == '#')) {
 		return parseRawString(r, v.set(String{}), err);
 	} else if ((ch >= '0' && ch <= '9') || ch == '.' || ch == '+' || ch == '-') {

@@ -66,12 +66,6 @@ private:
 	Location loc_;
 };
 
-size_t Value::nextIndex()
-{
-	static std::atomic<size_t> index;
-	return index.fetch_add(1);
-}
-
 static bool parseValue(
 	Reader &r, Value &v, int depth,
 	String *err, bool topLevel = false);
@@ -682,6 +676,7 @@ static bool parseKeyValuePairsAfterKey(
 {
 	obj.clear();
 
+	size_t index = 0;
 	while (true) {
 		if (r.peek() != ':') {
 			error(r.loc(), err, "Expected ':'");
@@ -694,6 +689,7 @@ static bool parseKeyValuePairsAfterKey(
 		}
 
 		auto &val = obj[std::move(key)] = Value::makeNull();
+		val->index(index++);
 		if (!parseValue(r, *val, depth, err)) {
 			return false;
 		}
@@ -792,8 +788,10 @@ static bool parseArray(Reader &r, Array &arr, int depth, String *err)
 		return true;
 	}
 
+	size_t index = 0;
 	while (true) {
 		arr.push_back(Value::makeNull());
+		arr.back()->index(index++);
 		if (!parseValue(r, *arr.back(), depth, err)) {
 			return false;
 		}

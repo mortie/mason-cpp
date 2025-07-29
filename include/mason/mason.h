@@ -28,7 +28,9 @@ using Number = double;
 using String = std::string;
 using BString = std::vector<unsigned char>;
 using Array = std::vector<std::shared_ptr<Value>>;
-using Object = std::unordered_map<std::string, std::shared_ptr<Value>, StringHash, std::equal_to<>>;
+using Object = std::unordered_map<
+	std::string, std::shared_ptr<Value>,
+	StringHash, std::equal_to<>>;
 
 class Value {
 public:
@@ -67,11 +69,11 @@ public:
 	Object &set(Object &&v) { return setT(std::move(v)); }
 
 	V &v() { return v_; }
+
+	void index(size_t index) { index_ = index; }
 	size_t index() { return index_; }
 
 private:
-	static size_t nextIndex();
-
 	template<typename T>
 	T &setT(T &&v)
 	{
@@ -80,7 +82,7 @@ private:
 	}
 
 	V v_;
-	size_t index_ = nextIndex();
+	size_t index_ = ~size_t(0);
 };
 
 bool parse(

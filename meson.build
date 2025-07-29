@@ -18,7 +18,13 @@ libmason_dep = declare_dependency(
 )
 
 executable(
-  'mason-cli',
-  'bin/mason-cli.cc',
+  'mason-to-json',
+  'bin/mason-to-json.cc',
+  dependencies: [libmason_dep],
+)
+
+executable(
+  'mason-roundtrip',
+  'bin/mason-roundtrip.cc',
   dependencies: [libmason_dep],
 )

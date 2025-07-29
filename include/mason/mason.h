@@ -89,4 +89,6 @@ bool parse(
 	std::istream &is, Value &v,
 	std::string *err = nullptr, int maxDepth = 100);
 
+void serialize(std::ostream &os, Value &v);
+
 }

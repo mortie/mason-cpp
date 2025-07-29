@@ -1,6 +1,6 @@
 #include "mason.h"
 
-#include <atomic>
+#include <charconv>
 #include <iostream>
 #include <stdint.h>
 
@@ -69,6 +69,7 @@ private:
 static bool parseValue(
 	Reader &r, Value &v, int depth,
 	String *err, bool topLevel = false);
+static void serializeValue(std::ostream &os, Value &val, int indent);
 
 static void error(Location loc, String *err, const char *what)
 {
@@ -926,6 +927,166 @@ bool parse(
 	}
 
 	return true;
+}
+
+static void serializeString(std::ostream &os, const String &ident)
+{
+	os << '"';
+	for (char ch: ident) {
+		if (ch == '"' || ch == '\\') {
+			os << '\\' << ch;
+		} else if (ch == '\n') {
+			os << "\\n";
+		} else if (ch == '\r') {
+			os << "\\r";
+		} else if (ch == '\t') {
+			os << "\\t";
+		} else {
+			os << ch;
+		}
+	}
+	os << '"';
+}
+
+static void serializeBString(std::ostream &os, const BString &ident)
+{
+	const char *alphabet = "0123456789abcdef";
+
+	os << "b\"";
+	for (unsigned char ch: ident) {
+		if (ch >= 32 && ch < 127) {
+			os << char(ch);
+		} else {
+			os << "\\x";
+			os << alphabet[ch >> 4];
+			os << alphabet[ch & 0x0f];
+		}
+	}
+	os << '"';
+}
+
+static void serializeKey(std::ostream &os, const String &ident)
+{
+	if (ident == "") {
+		os << "\"\"";
+		return;
+	}
+
+	unsigned char ch = ident[0];
+	bool isValidIdent =
+		(ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		ch == '_';
+	if (!isValidIdent) {
+		serializeString(os, ident);
+		return;
+	}
+
+	for (unsigned char ch: ident) {
+		isValidIdent =
+			(ch >= 'a' && ch <= 'z') ||
+			(ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') ||
+			ch == '_' || ch == '-';
+		if (!isValidIdent) {
+			serializeString(os, ident);
+			return;
+		}
+	}
+
+	os << ident;
+}
+
+static void serializeKeyValues(std::ostream &os, Object &obj, int indent)
+{
+	std::vector<std::pair<const std::string *, Value *>> values;
+	values.reserve(obj.size());
+	for (auto &[key, val]: obj) {
+		values.push_back({&key, val.get()});
+	}
+
+	std::sort(values.begin(), values.end(), [](const auto &a, const auto &b) {
+		return a.second->index() < b.second->index();
+	});
+
+	for (auto [key, val]: values) {
+		for (int i = 0; i < indent; ++i) {
+			os << "  ";
+		}
+
+		serializeKey(os, *key);
+		os << ": ";
+		serializeValue(os, *val, indent);
+		os << '\n';
+	}
+}
+
+static void serializeObject(std::ostream &os, Object &obj, int indent)
+{
+	if (obj.size() == 0) {
+		os << "{}";
+		return;
+	}
+
+	os << "{\n";
+	serializeKeyValues(os, obj, indent + 1);
+	os << '}';
+}
+
+static void serializeArray(std::ostream &os, Array &arr, int indent)
+{
+	if (arr.size() == 0) {
+		os << "[]";
+		return;
+	}
+
+	os << "[\n";
+	indent += 1;
+	for (auto &val: arr) {
+		for (int i = 0; i < indent; ++i) {
+			os << "  ";
+		}
+
+		serializeValue(os, *val, indent);
+		os << '\n';
+	}
+	os << ']';
+}
+
+static void serializeNumber(std::ostream &os, Number num)
+{
+	char buf[64];
+	auto res = std::to_chars(buf, &buf[sizeof(buf) - 1], num);
+	*res.ptr = '\0';
+	os << buf;
+}
+
+static void serializeValue(std::ostream &os, Value &val, int indent)
+{
+	if (val.is<Null>()) {
+		os << "null";
+	} else if (auto *b = val.as<Bool>(); b) {
+		os << (*b ? "true" : "false");
+	} else if (auto *n = val.as<Number>(); n) {
+		serializeNumber(os, *n);
+	} else if (auto *s = val.as<String>(); s) {
+		serializeString(os, *s);
+	} else if (auto *b = val.as<BString>(); b) {
+		serializeBString(os, *b);
+	} else if (auto *a = val.as<Array>(); a) {
+		serializeArray(os, *a, indent);
+	} else if (auto *o = val.as<Object>(); o) {
+		serializeObject(os, *o, indent);
+	}
+}
+
+void serialize(std::ostream &os, Value &v)
+{
+	if (auto *obj = v.as<Object>(); obj) {
+		serializeKeyValues(os, *obj, 0);
+	} else {
+		serializeValue(os, v, 0);
+	}
 }
 
 }

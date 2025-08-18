@@ -345,8 +345,30 @@ static bool parseStringEscape(Reader &r, String &str, String *err)
 			return false;
 		}
 
-		if (codepoint >= 0xd800 && codepoint <= 0xdfff) {
-			error(loc, err, "UTF-16 surrogate pair escapes are not allowed");
+		if (codepoint >= 0xd800 && codepoint <= 0xdbff) {
+			if (r.peek() != '\\' || r.peek2() != 'u') {
+				error(loc, err, "Unpaired UTF-16 surrogate pair");
+				return false;
+			}
+
+			r.get();
+			r.get();
+			loc = r.loc();
+			uint32_t low;
+			if (!parseHex(r, 4, low, err)) {
+				return false;
+			}
+
+			if (low < 0xdc00 || low > 0xdfff) {
+				error(loc, err, "Unpaired UTF-16 surrogate pair");
+				return false;
+			}
+
+			codepoint = (codepoint - 0xd800) * 0x400;
+			codepoint += low - 0xDC00;
+			codepoint += 0x10000;
+		} else if (codepoint >= 0xdc00 && codepoint <= 0xdfff) {
+			error(loc, err, "Unexpected low UTF-16 surrogate pair");
 			return false;
 		}
 
@@ -396,6 +418,11 @@ static bool parseString(Reader &r, String &str, String *err)
 			}
 
 			continue;
+		}
+
+		if (ch < 0x20) {
+			error(r.loc(), err, "Unexpected control character");
+			return false;
 		}
 
 		str += ch;

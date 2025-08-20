@@ -474,9 +474,40 @@ static bool parseBinaryString(Reader &r, BString &bytes, String *err)
 		if (ch > 127) {
 			error(loc, err, "Binary strings can only contain ASCII");
 			return false;
+		} else if (ch < 0x20) {
+			error(loc, err, "Unexpected control character");
+			return false;
 		}
 
 		bytes.push_back(ch);
+	}
+}
+
+static bool parseMultiLineString(Reader &r, String &str, String *err)
+{
+	str.clear();
+	r.get(); // '|'
+
+	while (true) {
+		while (true) {
+			int ch = r.get();
+			if (ch == EOF || ch == '\n' || (ch == '\r' && r.peek2() == '\n')) {
+				break;
+			}
+
+			str += ch;
+		}
+
+		if (!skipWhitespace(r, err)) {
+			return false;
+		}
+
+		if (r.peek() == '|') {
+			r.get();
+			str += '\n';
+		} else {
+			return true;
+		}
 	}
 }
 
@@ -716,16 +747,21 @@ static bool parseKeyValuePairsAfterKey(
 			return false;
 		}
 
+		// If the next value is a multi-line string,
+		// always assume that we have had a separator
+		bool hasSep = r.peek() == '|';
+
 		auto &val = obj[std::move(key)] = Value::makeNull();
 		val->index(index++);
 		if (!parseValue(r, *val, depth, err)) {
 			return false;
 		}
 
-		bool hasSep;
-		if (!skipSep(r, hasSep, err)) {
+		bool realHasSep;
+		if (!skipSep(r, realHasSep, err)) {
 			return false;
 		}
+		hasSep = hasSep || realHasSep;
 
 		if (!skipWhitespace(r, err)) {
 			return false;
@@ -818,16 +854,25 @@ static bool parseArray(Reader &r, Array &arr, int depth, String *err)
 
 	size_t index = 0;
 	while (true) {
+		if (!skipWhitespace(r, err)) {
+			return false;
+		}
+
+		// If the next value is a multi-line string,
+		// always assume that we have had a separator
+		bool hasSep = r.peek() == '|';
+
 		arr.push_back(Value::makeNull());
 		arr.back()->index(index++);
 		if (!parseValue(r, *arr.back(), depth, err)) {
 			return false;
 		}
 
-		bool hasSep;
-		if (!skipSep(r, hasSep, err)) {
+		bool realHasSep;
+		if (!skipSep(r, realHasSep, err)) {
 			return false;
 		}
+		hasSep = hasSep | realHasSep;
 
 		int ch = r.peek();
 		if (ch == ']') {
@@ -892,6 +937,8 @@ static bool parseValue(
 		return parseNumber(r, v.set(Number{}), err);
 	} else if (ch == 'b' && r.peek2() == '"') {
 		return parseBinaryString(r, v.set(BString{}), err);
+	} else if (ch == '|') {
+		return parseMultiLineString(r, v.set(String{}), err);
 	}
 
 	auto loc = r.loc();
